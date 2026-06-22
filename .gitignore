@@ -1,0 +1,102 @@
+# ── Environment & Secrets ─────────────────────────────────────────────────────
+.env
+*.env
+.env.*
+!.env.example
+
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+eggs/
+parts/
+var/
+sdist/
+develop-eggs/
+.installed.cfg
+lib/
+lib64/
+MANIFEST
+
+# ── Virtual Environments ──────────────────────────────────────────────────────
+venv/
+.venv/
+env/
+.env/
+ENV/
+LoanAdvicer/
+*.virtualenv
+
+# ── Data & Databases ──────────────────────────────────────────────────────────
+data/loan_rates.db
+data/loan_rates.db-shm
+data/loan_rates.db-wal
+*.db
+*.sqlite
+*.sqlite3
+
+# Keep the data/ directory but ignore its contents (user provides the docx)
+data/*
+!data/.gitkeep
+
+# ── Vector Store (ChromaDB / FAISS) ───────────────────────────────────────────
+vectorstore/
+chroma/
+*.faiss
+*.pkl
+
+# ── IDE & Editor ──────────────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.iml
+*.iws
+*.ipr
+.project
+.pydevproject
+.settings/
+*.sublime-project
+*.sublime-workspace
+
+# ── OS Files ──────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+$RECYCLE.BIN/
+
+# ── Logs ─────────────────────────────────────────────────────────────────────
+*.log
+logs/
+*.out
+
+# ── Testing ───────────────────────────────────────────────────────────────────
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+coverage.xml
+*.cover
+nosetests.xml
+test-results/
+
+# ── Jupyter ───────────────────────────────────────────────────────────────────
+.ipynb_checkpoints/
+*.ipynb
+
+# ── MyPy / Type Checking ──────────────────────────────────────────────────────
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyre/
+
+# ── Ruff / Linting ────────────────────────────────────────────────────────────
+.ruff_cache/
+
+# ── Docker ───────────────────────────────────────────────────────────────────
+# (keep docker-compose files but ignore override with local secrets)
+docker-compose.override.yml
