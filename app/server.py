@@ -6,9 +6,9 @@ server.py — FastAPI server exposing the LoanSarthi chatbot via:
   GET  /rates/compare — formatted rate comparison for a loan type
   GET  /health        — health check
 
-Session management: each session_id gets its own AgentExecutor instance
-(with its own ConversationBufferWindowMemory), stored in a dict.
-For production, replace the in-memory dict with Redis + serialized memory.
+Session management: conversation history is stored per session_id using
+LangChain's RunnableWithMessageHistory + in-memory ChatMessageHistory.
+For production, replace with Redis-backed message history.
 
 Run with:
     uvicorn app.server:app --reload --host 0.0.0.0 --port 8000
@@ -29,14 +29,14 @@ from app.rag_ingest import ingest
 from app.chatbot import build_agent
 from app.rate_tool import query_rates, compare_rates
 
-# ── Session store (in-memory — swap for Redis in production) ──────────────────
-_sessions: dict = {}
+# Single shared agent instance (history is managed per session_id internally)
+_agent = None
 
-
-def get_or_create_agent(session_id: str):
-    if session_id not in _sessions:
-        _sessions[session_id] = build_agent()
-    return _sessions[session_id]
+def get_agent():
+    global _agent
+    if _agent is None:
+        _agent = build_agent()
+    return _agent
 
 
 # ── Startup ───────────────────────────────────────────────────────────────────
@@ -47,6 +47,7 @@ async def lifespan(app: FastAPI):
     init_db()
     seed_rates()
     ingest(force=False)  # no-op if vector store already exists
+    get_agent()          # warm up the agent on startup
     print("✅  Ready.")
     yield
     print("👋  LoanSarthi shutting down.")
@@ -87,12 +88,6 @@ class ChatResponse(BaseModel):
     reply: str
 
 
-class RateQueryParams(BaseModel):
-    loan_type: Optional[str] = None
-    bank_name: Optional[str] = None
-    borrower_category: Optional[str] = None
-
-
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
 @app.get("/health")
@@ -109,10 +104,13 @@ def chat(req: ChatRequest):
     if not req.message.strip():
         raise HTTPException(status_code=400, detail="Message cannot be empty.")
 
-    agent = get_or_create_agent(req.session_id)
+    agent = get_agent()
 
     try:
-        result = agent.invoke({"input": req.message})
+        result = agent.invoke(
+            {"input": req.message},
+            config={"configurable": {"session_id": req.session_id}},
+        )
         return ChatResponse(session_id=req.session_id, reply=result["output"])
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Agent error: {str(e)}")
@@ -121,8 +119,9 @@ def chat(req: ChatRequest):
 @app.delete("/chat/{session_id}")
 def clear_session(session_id: str):
     """Clear conversation history for a session."""
-    if session_id in _sessions:
-        del _sessions[session_id]
+    from app.chatbot import _session_histories
+    if session_id in _session_histories:
+        del _session_histories[session_id]
         return {"message": f"Session '{session_id}' cleared."}
     return {"message": f"Session '{session_id}' not found."}
 
@@ -133,14 +132,6 @@ def get_rates(
         bank_name: Optional[str] = None,
         borrower_category: Optional[str] = None,
 ):
-    """
-    Query the live rate database directly.
-
-    Examples:
-        GET /rates?loan_type=home
-        GET /rates?loan_type=personal&bank_name=HDFC
-        GET /rates?loan_type=car&borrower_category=salaried
-    """
     rows = query_rates(
         loan_type=loan_type,
         bank_name=bank_name,
@@ -151,10 +142,6 @@ def get_rates(
 
 @app.get("/rates/compare/{loan_type}")
 def get_rate_comparison(loan_type: str):
-    """
-    Get a formatted rate comparison table for a loan type.
-    loan_type: home | personal | car
-    """
     valid = {"home", "personal", "car"}
     if loan_type.lower() not in valid:
         raise HTTPException(status_code=400, detail=f"loan_type must be one of: {valid}")
@@ -163,7 +150,6 @@ def get_rate_comparison(loan_type: str):
 
 @app.get("/banks")
 def list_banks():
-    """List all banks covered by LoanSarthi."""
     return {
         "banks": [
             "HDFC Bank", "ICICI Bank", "Axis Bank", "State Bank of India (SBI)",

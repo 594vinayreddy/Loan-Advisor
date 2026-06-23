@@ -1,31 +1,16 @@
-# ── Core AI / LangChain ──────────────────────────────────────────────────────
 langchain==0.3.25
+langchain-core==0.3.60
 langchain-community==0.3.24
-langchain-openai==0.3.16
 langchain-groq==0.3.2
+langchain-huggingface==0.1.2
+langchain-text-splitters==0.3.8
 langchain-chroma==0.2.4
-langchain-google-genai==2.1.4
-
-# ── API clients ───────────────────────────────────────────────────────────────
-groq==0.28.0
-google-generativeai==0.8.4
-
-# ── Vector store ─────────────────────────────────────────────────────────────
 chromadb-client==0.5.23
-
-# ── Document parsing ─────────────────────────────────────────────────────────
-python-docx==1.1.2
-
-# ── Database ─────────────────────────────────────────────────────────────────
-sqlalchemy==2.0.40
-
-# ── API server ───────────────────────────────────────────────────────────────
+sentence-transformers==3.4.1
 fastapi==0.115.12
 uvicorn[standard]==0.34.2
-
-# ── Config / utils ───────────────────────────────────────────────────────────
+sqlalchemy==2.0.40
+python-docx==1.1.2
 python-dotenv==1.1.0
-tiktoken==0.9.0
-
-# ── Pydantic — pre-built wheels, no Rust/C++ needed ──────────────────────────
 pydantic==2.10.6
+groq==0.28.0

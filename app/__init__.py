@@ -1,0 +1,1 @@
+# Makes 'app' a Python package — required for `from app.xxx import yyy` imports.

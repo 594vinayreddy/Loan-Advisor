@@ -1,39 +1,19 @@
 """
 chatbot.py — LoanSarthi conversational agent (Groq-powered).
 
-Architecture
-────────────
-                ┌──────────────────────────────────────┐
-  User query ──►│  LangChain Agent                     │
-                │  (Groq: llama-3.3-70b-versatile)     │
-                └────────────┬─────────────────────────┘
-                             │ decides which tool(s) to call
-                    ┌────────┴────────┐
-                    │                 │
-              ┌─────▼──────┐   ┌──────▼────────┐
-              │ RAG Tool   │   │ Rate Tool      │
-              │ (ChromaDB) │   │ (SQLite DB)    │
-              │ eligibility│   │ live rate      │
-              │ criteria,  │   │ comparisons    │
-              │ how to     │   │                │
-              │ apply, etc)│   │                │
-              └────────────┘   └───────────────-┘
-
-NOTE ON EMBEDDINGS
-──────────────────
-Groq does not provide an embeddings API. We continue to use
-OpenAI's text-embedding-3-small for the RAG vector store.
-Both GROQ_API_KEY and OPENAI_API_KEY must be set in .env.
+LangChain version: 0.3.x (pinned for stability)
 """
 
 from __future__ import annotations
 import os
 
 from langchain_groq import ChatGroq
-from langchain.agents import AgentExecutor, create_openai_functions_agent
-from langchain.tools import tool
+from langchain.agents import AgentExecutor, create_openai_tools_agent
+from langchain_core.tools import tool
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain.memory import ConversationBufferWindowMemory
+from langchain_community.chat_message_histories import ChatMessageHistory
+from langchain_core.chat_history import BaseChatMessageHistory
+from langchain_core.runnables.history import RunnableWithMessageHistory
 
 from app.rag_ingest import load_vectorstore
 from app.rate_tool import loan_rate_comparison_tool
@@ -45,15 +25,15 @@ SYSTEM_PROMPT = """You are LoanSarthi, a friendly and knowledgeable Indian loan 
 You help users navigate home loans, personal loans, and car loans across 12 major Indian banks.
 
 ## Your knowledge sources
-1. **Static knowledge base** (RAG): Official eligibility criteria, application process, 
+1. **Static knowledge base** (RAG): Official eligibility criteria, application process,
    required documents, and terms — sourced from each bank's official .bank.in site.
-2. **Live rate database**: Current interest rate ranges, processing fees, and tenure 
+2. **Live rate database**: Current interest rate ranges, processing fees, and tenure
    options — updated regularly.
 
 ## Guidelines
 - Always be accurate. If a field is marked "Not publicly disclosed" or "Pending confirmation",
   tell the user clearly and advise them to confirm directly with the bank.
-- Rates in the database are indicative. Always add: "Please confirm current rates with the 
+- Rates in the database are indicative. Always add: "Please confirm current rates with the
   bank before applying."
 - When comparing banks, present information in a clear, structured way.
 - For complex eligibility questions, walk the user through the criteria step by step.
@@ -110,23 +90,23 @@ def loan_eligibility_rag_tool(query: str) -> str:
     return "\n\n---\n\n".join(parts)
 
 
+# ── Session store ─────────────────────────────────────────────────────────────
+
+_session_histories: dict[str, ChatMessageHistory] = {}
+
+def get_session_history(session_id: str) -> BaseChatMessageHistory:
+    if session_id not in _session_histories:
+        _session_histories[session_id] = ChatMessageHistory()
+    return _session_histories[session_id]
+
+
 # ── Agent builder ─────────────────────────────────────────────────────────────
 
 def build_agent(
     model: str | None = None,
     temperature: float = 0.2,
-) -> AgentExecutor:
-    """
-    Build and return a LangChain agent backed by Groq with:
-    - RAG tool (ChromaDB static content)
-    - Rate comparison tool (SQLite live rates)
-    - Sliding window conversation memory (last 10 turns)
+) -> RunnableWithMessageHistory:
 
-    Args:
-        model:       Groq model name. Reads GROQ_MODEL env var if not provided.
-                     Defaults to llama-3.3-70b-versatile.
-        temperature: Lower = more factual answers.
-    """
     groq_model = model or os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
 
     llm = ChatGroq(
@@ -147,32 +127,32 @@ def build_agent(
         MessagesPlaceholder(variable_name="agent_scratchpad"),
     ])
 
-    agent = create_openai_functions_agent(llm=llm, tools=tools, prompt=prompt)
+    agent = create_openai_tools_agent(llm=llm, tools=tools, prompt=prompt)
 
-    memory = ConversationBufferWindowMemory(
-        memory_key="chat_history",
-        return_messages=True,
-        k=10,
-    )
-
-    return AgentExecutor(
+    agent_executor = AgentExecutor(
         agent=agent,
         tools=tools,
-        memory=memory,
         verbose=True,
         max_iterations=5,
         handle_parsing_errors=True,
     )
 
+    return RunnableWithMessageHistory(
+        agent_executor,
+        get_session_history,
+        input_messages_key="input",
+        history_messages_key="chat_history",
+    )
 
-# ── Simple CLI for testing ────────────────────────────────────────────────────
+
+# ── CLI for testing ───────────────────────────────────────────────────────────
 
 def run_cli():
-    """Interactive command-line chat — useful for local testing."""
     model = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
     print(f"\n🏦  Welcome to LoanSarthi! (Model: {model})")
     print("    Type 'exit' to quit.\n")
     agent = build_agent()
+    session_id = "cli_session"
 
     while True:
         try:
@@ -188,7 +168,10 @@ def run_cli():
         if not user_input:
             continue
 
-        result = agent.invoke({"input": user_input})
+        result = agent.invoke(
+            {"input": user_input},
+            config={"configurable": {"session_id": session_id}},
+        )
         print(f"\nLoanSarthi: {result['output']}\n")
 
 

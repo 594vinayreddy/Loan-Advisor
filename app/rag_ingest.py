@@ -1,39 +1,40 @@
 """
 rag_ingest.py — Parses the LoanSarthi static content docx and indexes it
-into ChromaDB (running as a Docker container) via the HTTP client.
+into ChromaDB using FREE local embeddings (sentence-transformers).
 
-Embedding model: Google Gemini text-embedding-004 (via AI Studio API key)
-Vector store:    ChromaDB running in Docker (HTTP client — no C++ needed)
-Chat model:      Groq (configured separately in chatbot.py)
+Embedding model: all-MiniLM-L6-v2 (runs locally, no API key, no cost)
+  - Downloads ~90MB on first run, then cached locally forever
+  - Excellent quality for retrieval tasks, very fast on CPU
+Vector store: ChromaDB running in Docker (HTTP client)
 
 Prerequisites:
-    1. docker run -d -p 8001:8000 --name chromadb chromadb/chroma:0.5.23
-    2. GOOGLE_API_KEY set in .env
+    1. docker run -d -p 8001:8000 --name chromadb chromadb/chroma:0.6.0
+    2. No API key needed for embeddings!
 
 Run once (or after updating the docx):
     python main.py ingest
-    python main.py ingest --force   ← rebuilds from scratch
+    python main.py ingest --force
 """
 
 import os
-from pathlib import Path
 from typing import List
 
 from docx import Document
 from docx.table import Table
 from docx.text.paragraph import Paragraph
 
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_chroma import Chroma
-from langchain_google_genai import GoogleGenerativeAIEmbeddings
-from langchain.schema import Document as LCDocument
+from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_core.documents import Document as LCDocument
 import chromadb
 
 CHROMA_HOST       = os.getenv("CHROMA_HOST", "localhost")
 CHROMA_PORT       = int(os.getenv("CHROMA_PORT", "8001"))
 CHROMA_COLLECTION = os.getenv("CHROMA_COLLECTION", "loansarthi_static")
 DOCX_PATH         = os.getenv("STATIC_CONTENT_PATH", "./data/loansarthi_static_content.docx")
-GEMINI_MODEL      = os.getenv("GEMINI_EMBEDDING_MODEL", "models/text-embedding-004")
+# Free local model — downloads once (~90MB), then cached at ~/.cache/huggingface/
+EMBEDDING_MODEL   = os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -88,32 +89,28 @@ def _detect_bank_and_loan(text: str):
     return bank_found, loan_found
 
 
-def _get_chroma_client():
-    """Return an HTTP client connected to the ChromaDB Docker container."""
+def _get_chroma_client() -> chromadb.HttpClient:
     return chromadb.HttpClient(host=CHROMA_HOST, port=CHROMA_PORT)
 
 
-def _get_embeddings() -> GoogleGenerativeAIEmbeddings:
-    """Return Gemini embedding model configured from env."""
-    return GoogleGenerativeAIEmbeddings(
-        model=GEMINI_MODEL,
-        google_api_key=os.getenv("GOOGLE_API_KEY"),
-        task_type="retrieval_document",   # optimises embeddings for RAG retrieval
+def _get_embeddings() -> HuggingFaceEmbeddings:
+    """
+    Returns a local sentence-transformers embedding model.
+    First call downloads ~90MB to ~/.cache/huggingface/ — subsequent calls
+    load from cache instantly. No API key or internet needed after first run.
+    """
+    return HuggingFaceEmbeddings(
+        model_name=EMBEDDING_MODEL,
+        model_kwargs={"device": "cpu"},
+        encode_kwargs={"normalize_embeddings": True},
     )
 
 
 # ── Main ingest ───────────────────────────────────────────────────────────────
 
 def ingest(force: bool = False):
-    """
-    Build (or rebuild) the ChromaDB collection from the static docx.
-
-    Before calling this, make sure ChromaDB is running:
-        docker run -d -p 8001:8000 --name chromadb chromadb/chroma:0.5.23
-    """
     client = _get_chroma_client()
 
-    # Check if collection already has data
     try:
         col = client.get_collection(CHROMA_COLLECTION)
         count = col.count()
@@ -125,7 +122,7 @@ def ingest(force: bool = False):
             client.delete_collection(CHROMA_COLLECTION)
             print(f"🗑️   Deleted existing collection '{CHROMA_COLLECTION}'.")
     except Exception:
-        pass  # collection doesn't exist yet — that's fine
+        pass
 
     print(f"📄  Reading docx: {DOCX_PATH}")
     raw_text = extract_text_from_docx(DOCX_PATH)
@@ -153,7 +150,8 @@ def ingest(force: bool = False):
             )
         )
 
-    print(f"🔢  Embedding with Gemini ({GEMINI_MODEL}) and storing in ChromaDB …")
+    print(f"🔢  Embedding with '{EMBEDDING_MODEL}' (local, free) and storing in ChromaDB …")
+    print("    (First run downloads ~90MB — please wait)")
     embeddings = _get_embeddings()
 
     Chroma.from_documents(
@@ -166,15 +164,7 @@ def ingest(force: bool = False):
 
 
 def load_vectorstore() -> Chroma:
-    """
-    Load the existing ChromaDB collection for similarity search.
-    Note: uses task_type='retrieval_query' at query time (vs 'retrieval_document' at ingest).
-    """
-    embeddings = GoogleGenerativeAIEmbeddings(
-        model=GEMINI_MODEL,
-        google_api_key=os.getenv("GOOGLE_API_KEY"),
-        task_type="retrieval_query",   # optimises embeddings for search queries
-    )
+    embeddings = _get_embeddings()
     client = _get_chroma_client()
     return Chroma(
         client=client,

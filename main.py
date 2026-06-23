@@ -2,25 +2,24 @@
 main.py — Entry point for LoanSarthi.
 
 Usage:
-    # Start the API server
     python main.py serve
-
-    # Re-ingest the docx into ChromaDB (run after updating the docx)
-    python main.py ingest --force
-
-    # Run the CLI chatbot (for local testing without the API)
+    python main.py ingest [--force]
     python main.py cli
-
-    # Seed / reset the rate database
     python main.py seed-db
 """
 
 import sys
 import os
 
-# Load .env if present
+# ── Fix module resolution ─────────────────────────────────────────────────────
+# Add the project root to sys.path so that "from app.xxx import yyy" works
+# regardless of which directory you launch from.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+# ── Load .env ─────────────────────────────────────────────────────────────────
 from dotenv import load_dotenv
 load_dotenv()
+
 
 def main():
     cmd = sys.argv[1] if len(sys.argv) > 1 else "serve"
