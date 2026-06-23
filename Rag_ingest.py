@@ -2,17 +2,17 @@
 rag_ingest.py — Parses the LoanSarthi static content docx and indexes it
 into ChromaDB (running as a Docker container) via the HTTP client.
 
+Embedding model: Google Gemini text-embedding-004 (via AI Studio API key)
+Vector store:    ChromaDB running in Docker (HTTP client — no C++ needed)
+Chat model:      Groq (configured separately in chatbot.py)
+
 Prerequisites:
-    docker run -d -p 8001:8000 --name chromadb chromadb/chroma:0.5.23
+    1. docker run -d -p 8001:8000 --name chromadb chromadb/chroma:0.5.23
+    2. GOOGLE_API_KEY set in .env
 
-Why HTTP client mode?
-    The embedded chromadb requires chroma-hnswlib which needs Microsoft C++
-    Build Tools on Windows. The HTTP client (chromadb-client) is a pure-Python
-    package with zero C++ dependency — it just talks to the Docker container
-    over HTTP.
-
-Run once (or whenever the docx is updated):
-    python -m app.rag_ingest
+Run once (or after updating the docx):
+    python main.py ingest
+    python main.py ingest --force   ← rebuilds from scratch
 """
 
 import os
@@ -25,7 +25,7 @@ from docx.text.paragraph import Paragraph
 
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_chroma import Chroma
-from langchain_openai import OpenAIEmbeddings
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain.schema import Document as LCDocument
 import chromadb
 
@@ -33,6 +33,7 @@ CHROMA_HOST       = os.getenv("CHROMA_HOST", "localhost")
 CHROMA_PORT       = int(os.getenv("CHROMA_PORT", "8001"))
 CHROMA_COLLECTION = os.getenv("CHROMA_COLLECTION", "loansarthi_static")
 DOCX_PATH         = os.getenv("STATIC_CONTENT_PATH", "./data/loansarthi_static_content.docx")
+GEMINI_MODEL      = os.getenv("GEMINI_EMBEDDING_MODEL", "models/text-embedding-004")
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -92,6 +93,15 @@ def _get_chroma_client():
     return chromadb.HttpClient(host=CHROMA_HOST, port=CHROMA_PORT)
 
 
+def _get_embeddings() -> GoogleGenerativeAIEmbeddings:
+    """Return Gemini embedding model configured from env."""
+    return GoogleGenerativeAIEmbeddings(
+        model=GEMINI_MODEL,
+        google_api_key=os.getenv("GOOGLE_API_KEY"),
+        task_type="retrieval_document",   # optimises embeddings for RAG retrieval
+    )
+
+
 # ── Main ingest ───────────────────────────────────────────────────────────────
 
 def ingest(force: bool = False):
@@ -143,8 +153,8 @@ def ingest(force: bool = False):
             )
         )
 
-    print(f"🔢  Embedding and storing in ChromaDB (http://{CHROMA_HOST}:{CHROMA_PORT}) …")
-    embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
+    print(f"🔢  Embedding with Gemini ({GEMINI_MODEL}) and storing in ChromaDB …")
+    embeddings = _get_embeddings()
 
     Chroma.from_documents(
         documents=documents,
@@ -156,8 +166,15 @@ def ingest(force: bool = False):
 
 
 def load_vectorstore() -> Chroma:
-    """Load the existing ChromaDB collection via HTTP client."""
-    embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
+    """
+    Load the existing ChromaDB collection for similarity search.
+    Note: uses task_type='retrieval_query' at query time (vs 'retrieval_document' at ingest).
+    """
+    embeddings = GoogleGenerativeAIEmbeddings(
+        model=GEMINI_MODEL,
+        google_api_key=os.getenv("GOOGLE_API_KEY"),
+        task_type="retrieval_query",   # optimises embeddings for search queries
+    )
     client = _get_chroma_client()
     return Chroma(
         client=client,

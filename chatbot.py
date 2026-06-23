@@ -1,12 +1,12 @@
 """
-chatbot.py — LoanSarthi conversational agent.
+chatbot.py — LoanSarthi conversational agent (Groq-powered).
 
 Architecture
 ────────────
-                ┌─────────────────────────────────┐
-  User query ──►│  LangChain OpenAI Functions Agent│
-                │  (gpt-4o or gpt-3.5-turbo)      │
-                └────────────┬────────────────────-┘
+                ┌──────────────────────────────────────┐
+  User query ──►│  LangChain Agent                     │
+                │  (Groq: llama-3.3-70b-versatile)     │
+                └────────────┬─────────────────────────┘
                              │ decides which tool(s) to call
                     ┌────────┴────────┐
                     │                 │
@@ -18,13 +18,18 @@ Architecture
               │ how to     │   │                │
               │ apply, etc)│   │                │
               └────────────┘   └───────────────-┘
+
+NOTE ON EMBEDDINGS
+──────────────────
+Groq does not provide an embeddings API. We continue to use
+OpenAI's text-embedding-3-small for the RAG vector store.
+Both GROQ_API_KEY and OPENAI_API_KEY must be set in .env.
 """
 
 from __future__ import annotations
 import os
-from typing import Optional
 
-from langchain_openai import ChatOpenAI
+from langchain_groq import ChatGroq
 from langchain.agents import AgentExecutor, create_openai_functions_agent
 from langchain.tools import tool
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
@@ -32,6 +37,7 @@ from langchain.memory import ConversationBufferWindowMemory
 
 from app.rag_ingest import load_vectorstore
 from app.rate_tool import loan_rate_comparison_tool
+
 
 # ── System prompt ─────────────────────────────────────────────────────────────
 
@@ -67,7 +73,6 @@ You help users navigate home loans, personal loans, and car loans across 12 majo
 
 _vectorstore = None
 
-
 def _get_vectorstore():
     global _vectorstore
     if _vectorstore is None:
@@ -87,7 +92,6 @@ def loan_eligibility_rag_tool(query: str) -> str:
         "What is the minimum CIBIL score for HDFC personal loan?"
         "How do I apply for SBI home loan?"
         "What documents are needed for ICICI car loan?"
-        "What is the age limit for Axis Bank home loan?"
 
     Returns: relevant excerpts from the official static knowledge base.
     """
@@ -108,18 +112,28 @@ def loan_eligibility_rag_tool(query: str) -> str:
 
 # ── Agent builder ─────────────────────────────────────────────────────────────
 
-def build_agent(model: str = "gpt-4o", temperature: float = 0.2) -> AgentExecutor:
+def build_agent(
+    model: str | None = None,
+    temperature: float = 0.2,
+) -> AgentExecutor:
     """
-    Build and return a LangChain OpenAI Functions agent with:
+    Build and return a LangChain agent backed by Groq with:
     - RAG tool (ChromaDB static content)
     - Rate comparison tool (SQLite live rates)
     - Sliding window conversation memory (last 10 turns)
 
     Args:
-        model:       OpenAI model name (gpt-4o recommended for tool calling)
-        temperature: Lower = more factual, higher = more creative
+        model:       Groq model name. Reads GROQ_MODEL env var if not provided.
+                     Defaults to llama-3.3-70b-versatile.
+        temperature: Lower = more factual answers.
     """
-    llm = ChatOpenAI(model=model, temperature=temperature)
+    groq_model = model or os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+
+    llm = ChatGroq(
+        model=groq_model,
+        temperature=temperature,
+        groq_api_key=os.getenv("GROQ_API_KEY"),
+    )
 
     tools = [
         loan_eligibility_rag_tool,
@@ -138,15 +152,15 @@ def build_agent(model: str = "gpt-4o", temperature: float = 0.2) -> AgentExecuto
     memory = ConversationBufferWindowMemory(
         memory_key="chat_history",
         return_messages=True,
-        k=10,  # keep last 10 turns in context
+        k=10,
     )
 
     return AgentExecutor(
         agent=agent,
         tools=tools,
         memory=memory,
-        verbose=True,  # set False in production to reduce log noise
-        max_iterations=5,  # prevent runaway loops
+        verbose=True,
+        max_iterations=5,
         handle_parsing_errors=True,
     )
 
@@ -155,7 +169,9 @@ def build_agent(model: str = "gpt-4o", temperature: float = 0.2) -> AgentExecuto
 
 def run_cli():
     """Interactive command-line chat — useful for local testing."""
-    print("\n🏦  Welcome to LoanSarthi! Type 'exit' to quit.\n")
+    model = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+    print(f"\n🏦  Welcome to LoanSarthi! (Model: {model})")
+    print("    Type 'exit' to quit.\n")
     agent = build_agent()
 
     while True:

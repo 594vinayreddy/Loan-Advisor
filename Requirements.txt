@@ -2,12 +2,15 @@
 langchain==0.3.25
 langchain-community==0.3.24
 langchain-openai==0.3.16
+langchain-groq==0.3.2
 langchain-chroma==0.2.4
-openai==1.82.1
+langchain-google-genai==2.1.4
+
+# ── API clients ───────────────────────────────────────────────────────────────
+groq==0.28.0
+google-generativeai==0.8.4
 
 # ── Vector store ─────────────────────────────────────────────────────────────
-# chromadb in HTTP-client mode — connects to ChromaDB running in Docker.
-# chromadb-client is a thin wrapper with NO C++ dependency (no chroma-hnswlib).
 chromadb-client==0.5.23
 
 # ── Document parsing ─────────────────────────────────────────────────────────
@@ -18,11 +21,11 @@ sqlalchemy==2.0.40
 
 # ── API server ───────────────────────────────────────────────────────────────
 fastapi==0.115.12
-uvicorn==0.34.2
+uvicorn[standard]==0.34.2
 
 # ── Config / utils ───────────────────────────────────────────────────────────
 python-dotenv==1.1.0
 tiktoken==0.9.0
 
-# ── Pydantic — use 2.10.x which has pre-built Windows wheels (no Rust needed)
+# ── Pydantic — pre-built wheels, no Rust/C++ needed ──────────────────────────
 pydantic==2.10.6
