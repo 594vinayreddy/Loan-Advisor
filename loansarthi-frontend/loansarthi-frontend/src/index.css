@@ -1,0 +1,40 @@
+:root {
+  --navy:       #0F1E3C;
+  --navy-mid:   #1A2F54;
+  --navy-light: #243B68;
+  --saffron:    #F5A623;
+  --saffron-dim:#C4831A;
+  --cream:      #FAFAF8;
+  --slate:      #6B7A99;
+  --slate-light:#A8B4CC;
+  --green:      #22C55E;
+  --red:        #EF4444;
+  --border:     rgba(255,255,255,0.08);
+  --font-display: 'DM Serif Display', Georgia, serif;
+  --font-body:    'Inter', system-ui, sans-serif;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body, #root {
+  height: 100%;
+  background: var(--navy);
+  color: var(--cream);
+  font-family: var(--font-body);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Scrollbars ─────────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--navy-light); border-radius: 2px; }
+
+/* ── Typography ─────────────────────────────────────────────────────────── */
+h1, h2, h3 { font-family: var(--font-display); font-weight: 400; }
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}

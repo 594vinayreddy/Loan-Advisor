@@ -133,7 +133,7 @@ def build_agent(
         agent=agent,
         tools=tools,
         verbose=True,
-        max_iterations=5,
+        max_iterations=50,
         handle_parsing_errors=True,
     )
 
