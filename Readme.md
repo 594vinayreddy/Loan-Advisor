@@ -93,7 +93,7 @@ LoanAdvicer/
 ### 1. Clone and install dependencies
 
 ```bash
-git clone <your-repo-url>
+git clone Loan-Advisor 
 cd LoanAdvicer
 
 python -m venv venv
